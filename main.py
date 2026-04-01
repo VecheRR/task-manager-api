@@ -36,11 +36,20 @@ def new_task(taskReq: TaskReq):
     tasks.append(task.model_dump())
     return task
 
-@app.delete("/tasks/{task_id}")
+@app.delete("/tasks/{task_id}", status_code=204)
 def del_task(task_id: int):
     for i in range(len(tasks)):
         if tasks[i]["id"] == task_id:
             del tasks[i]
             return {"message": "Task deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+@app.put("/tasks/{task_id}", status_code=200)
+def update_task(task_id: int, taskReq: TaskReq):
+    for i in range(len(tasks)):
+        if tasks[i]["id"] == task_id:
+            tasks[i]["title"] = taskReq.title
+            return {"message": "Task updated successfully"}
     else:
         raise HTTPException(status_code=404, detail="Task not found")
