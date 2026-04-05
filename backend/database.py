@@ -17,3 +17,10 @@ else:
     raise Exception("DB connection failed")
 
 SessionLocal = sessionmaker(bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
