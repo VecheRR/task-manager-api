@@ -1,55 +1,77 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
+from database import engine, SessionLocal
+from models import Task, Base
+from sqlalchemy.orm import Session
+from schemas import TaskResponse, TaskCreate
 
 app = FastAPI()
 
-next_id = 1
+Base.metadata.create_all(bind=engine)
 
-tasks = [
-    {"id": 1, "title": "Купить молоко"},
-    {"id": 2, "title": "Сделать проект"}
-]
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-@app.get("/tasks")
-def get_tasks():
-    return tasks
 
-@app.get("/tasks/{task_id}")
-def get_task(task_id: int):
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(status_code=404, detail="Task not found")
+@app.get("/test-db")
+def test_db():
+    conn = engine.connect()
+    return {"status": "connected"}
 
-class TaskReq(BaseModel):
-    title: str = Field(..., )
 
-class Task(BaseModel):
-    id: int
-    title: str = Field(..., )
+@app.post("/tasks", response_model=TaskResponse)
+def create_task(taskReq: TaskCreate, db: Session = Depends(get_db)):
+    task = Task(title=taskReq.title)
 
-@app.post("/tasks", status_code=201)
-def new_task(taskReq: TaskReq):
-    global next_id
-    task = Task(id=next_id, title=taskReq.title)
-    next_id += 1
-    tasks.append(task.model_dump())
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
     return task
 
-@app.delete("/tasks/{task_id}", status_code=204)
-def del_task(task_id: int):
-    for i in range(len(tasks)):
-        if tasks[i]["id"] == task_id:
-            del tasks[i]
-            return {"message": "Task deleted successfully"}
-    else:
+
+@app.get("/tasks", response_model=list[TaskResponse])
+def get_tasks(db: Session = Depends(get_db)):
+    tasks = db.query(Task).all()
+    return tasks
+
+
+@app.get("/tasks/{task_id}", response_model=TaskResponse)
+def get_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+
+    if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-@app.put("/tasks/{task_id}", status_code=200)
-def update_task(task_id: int, taskReq: TaskReq):
-    for i in range(len(tasks)):
-        if tasks[i]["id"] == task_id:
-            tasks[i]["title"] = taskReq.title
-            return {"message": "Task updated successfully"}
-    else:
+    return task
+
+
+@app.delete("/tasks/{task_id}", response_model=TaskResponse)
+def delete_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")   
+    
+    db.delete(task)
+    db.commit()
+
+    return task
+
+
+@app.put("/tasks/{task_id}", response_model=TaskResponse)
+def update_task(task_id: int, taskReq: TaskCreate, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+
+    if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    task.title = taskReq.title  # type: ignore
+
+    db.commit()
+
+    return task
